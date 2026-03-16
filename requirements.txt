@@ -2,4 +2,3 @@ pyTelegramBotAPI
 openai
 gTTS
 requests
-sqlite3
