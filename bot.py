@@ -3,10 +3,14 @@ import telebot
 from openai import OpenAI
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
-client = OpenAI(api_key=OPENAI_API_KEY)
+
+client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1"
+)
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -16,7 +20,7 @@ def start(message):
 def chat(message):
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama3-8b-8192",
             messages=[
                 {"role": "user", "content": message.text}
             ]
@@ -26,7 +30,6 @@ def chat(message):
         bot.reply_to(message, reply)
 
     except Exception as e:
-        print(e)
-        bot.reply_to(message, "Bot đang gặp lỗi, thử lại sau.")
+        bot.reply_to(message, "Bot đang gặp lỗi.")
 
 bot.infinity_polling()
