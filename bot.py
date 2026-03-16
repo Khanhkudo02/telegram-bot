@@ -1,6 +1,7 @@
 import os
 import telebot
 import requests
+import sqlite3
 from urllib.parse import quote
 from openai import OpenAI
 from gtts import gTTS
@@ -15,7 +16,19 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
-chat_history = {}
+# DATABASE lưu lịch sử
+conn = sqlite3.connect("memory.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS history(
+user_id INTEGER,
+role TEXT,
+content TEXT
+)
+""")
+
+conn.commit()
 
 # START
 @bot.message_handler(commands=['start'])
@@ -23,43 +36,58 @@ def start(message):
 
     bot.reply_to(
         message,
-        "🤖 AI Bot đã sẵn sàng!\n\n"
+        "🤖 AI BOT ĐÃ SẴN SÀNG\n\n"
         "Tính năng:\n"
         "💬 Chat AI\n"
         "🖼 /image tạo ảnh\n"
+        "🌐 /search tìm internet\n"
         "🎤 gửi voice\n"
-        "📄 gửi file để đọc\n"
     )
 
 # IMAGE
 @bot.message_handler(commands=['image'])
 def image(message):
 
-    prompt = message.text.replace("/image", "").strip()
+    prompt = message.text.replace("/image","").strip()
 
     if prompt == "":
-        bot.reply_to(message, "Ví dụ:\n/image con mèo phi hành gia")
+        bot.reply_to(message,"Ví dụ:\n/image robot tương lai")
         return
 
-    bot.send_message(message.chat.id, "🎨 Đang tạo ảnh...")
+    bot.send_message(message.chat.id,"🎨 Đang tạo ảnh...")
 
     prompt = quote(prompt)
 
     url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024"
 
-    bot.send_photo(message.chat.id, url)
+    bot.send_photo(message.chat.id,url)
+
+# INTERNET SEARCH
+@bot.message_handler(commands=['search'])
+def search(message):
+
+    query = message.text.replace("/search","").strip()
+
+    if query == "":
+        bot.reply_to(message,"Ví dụ:\n/search tin tức AI")
+        return
+
+    url = f"https://api.duckduckgo.com/?q={quote(query)}&format=json"
+
+    data = requests.get(url).json()
+
+    answer = data.get("Abstract")
+
+    if answer == "":
+        answer = "Không tìm thấy thông tin."
+
+    bot.reply_to(message,answer)
 
 # VOICE INPUT
 @bot.message_handler(content_types=['voice'])
 def voice(message):
 
-    bot.reply_to(message, "🎤 Đã nhận voice. Tính năng này đang nâng cấp...")
-
-# FILE
-@bot.message_handler(content_types=['document'])
-def file_handler(message):
-
-    bot.reply_to(message, "📄 Đã nhận file. Bot sẽ đọc file trong bản nâng cấp tiếp theo.")
+    bot.reply_to(message,"🎤 Voice đã nhận (tính năng nhận dạng sẽ nâng cấp thêm).")
 
 # CHAT AI
 @bot.message_handler(func=lambda message: True)
@@ -69,49 +97,59 @@ def chat(message):
 
         user_id = message.chat.id
 
-        if user_id not in chat_history:
-            chat_history[user_id] = []
-
-        chat_history[user_id].append(
-            {"role": "user", "content": message.text}
+        cursor.execute(
+            "INSERT INTO history VALUES(?,?,?)",
+            (user_id,"user",message.text)
         )
+
+        conn.commit()
+
+        cursor.execute(
+            "SELECT role,content FROM history WHERE user_id=? ORDER BY rowid DESC LIMIT 10",
+            (user_id,)
+        )
+
+        history = cursor.fetchall()[::-1]
+
+        messages = [
+            {
+                "role":"system",
+                "content":"Bạn là trợ lý AI thông minh, trả lời tiếng Việt."
+            }
+        ]
+
+        for role,content in history:
+            messages.append({"role":role,"content":content})
 
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            messages=[
-                {
-                    "role": "system",
-                    "content": "Bạn là trợ lý AI thông minh, trả lời ngắn gọn bằng tiếng Việt."
-                }
-            ] + chat_history[user_id]
+            messages=messages
         )
 
         reply = response.choices[0].message.content
 
-        chat_history[user_id].append(
-            {"role": "assistant", "content": reply}
+        cursor.execute(
+            "INSERT INTO history VALUES(?,?,?)",
+            (user_id,"assistant",reply)
         )
 
-        bot.reply_to(message, reply)
+        conn.commit()
+
+        bot.reply_to(message,reply)
 
         # VOICE OUTPUT
-        try:
+        tts = gTTS(reply,lang="vi")
 
-            tts = gTTS(reply, lang="vi")
+        tts.save("voice.mp3")
 
-            tts.save("voice.mp3")
+        with open("voice.mp3","rb") as v:
 
-            with open("voice.mp3", "rb") as voice:
-
-                bot.send_voice(message.chat.id, voice)
-
-        except:
-            pass
+            bot.send_voice(message.chat.id,v)
 
     except Exception as e:
 
         print(e)
 
-        bot.reply_to(message, "Bot đang gặp lỗi.")
+        bot.reply_to(message,"Bot đang lỗi.")
 
 bot.infinity_polling()
