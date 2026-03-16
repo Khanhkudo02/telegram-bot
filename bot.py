@@ -5,6 +5,8 @@ from openai import OpenAI
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
+print("Bot starting...")
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
 client = OpenAI(
@@ -30,6 +32,7 @@ def chat(message):
         bot.reply_to(message, reply)
 
     except Exception as e:
+        print("ERROR:", e)
         bot.reply_to(message, "Bot đang gặp lỗi.")
 
 bot.infinity_polling()
