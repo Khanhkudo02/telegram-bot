@@ -7,4 +7,4 @@ pdfplumber
 pandas
 openpyxl
 pillow
-lxml
+python-docx
