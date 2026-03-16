@@ -5,9 +5,8 @@ from openai import OpenAI
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
+bot = telebot.TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
-
-bot = telebot.TeleBot(BOT_TOKEN, parse_mode=None)
 
 @bot.message_handler(commands=['start'])
 def start(message):
@@ -17,16 +16,17 @@ def start(message):
 def chat(message):
     try:
         response = client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {"role": "user", "content": message.text}
-    ]
-)
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "user", "content": message.text}
+            ]
+        )
 
         reply = response.choices[0].message.content
         bot.reply_to(message, reply)
 
     except Exception as e:
-        bot.reply_to(message, "Bot đang gặp lỗi.")
+        print(e)
+        bot.reply_to(message, "Bot đang gặp lỗi, thử lại sau.")
 
 bot.infinity_polling()
