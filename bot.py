@@ -4,14 +4,11 @@ import requests
 import sqlite3
 import pdfplumber
 import pandas as pd
-import time
-import threading
-from datetime import datetime
 from duckduckgo_search import DDGS
-from urllib.parse import quote
 from openai import OpenAI
 import edge_tts
 import asyncio
+from docx import Document
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -22,6 +19,12 @@ client = OpenAI(
     api_key=GROQ_API_KEY,
     base_url="https://api.groq.com/openai/v1"
 )
+
+# =================
+# FILE MEMORY
+# =================
+
+file_memory = {}
 
 # =================
 # DATABASE
@@ -38,15 +41,6 @@ content TEXT
 )
 """)
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS reminders(
-id INTEGER PRIMARY KEY AUTOINCREMENT,
-chat_id INTEGER,
-time TEXT,
-text TEXT
-)
-""")
-
 conn.commit()
 
 # =================
@@ -58,36 +52,14 @@ def start(message):
 
     bot.reply_to(
         message,
-        "🤖 AI BOT ULTRA\n\n"
-        "Commands:\n"
-        "/image tạo ảnh\n"
-        "/search tìm internet\n"
-        "/remind HH:MM nội dung\n"
-        "/listremind\n"
-        "/delremind id\n"
-        "gửi file / voice / ảnh"
+        "🤖 AI BOT\n\n"
+        "Chức năng:\n"
+        "• Chat AI\n"
+        "• /search tìm internet\n"
+        "• gửi file PDF / Word / Excel\n"
+        "• hỏi về nội dung file\n"
+        "• voice trả lời"
     )
-
-# =================
-# IMAGE AI
-# =================
-
-@bot.message_handler(commands=['image'])
-def image(message):
-
-    prompt = message.text.replace("/image","").strip()
-
-    if prompt == "":
-        bot.reply_to(message,"Ví dụ:\n/image cyberpunk samurai")
-        return
-
-    bot.send_message(message.chat.id,"🎨 Đang tạo ảnh...")
-
-    prompt = quote(prompt)
-
-    url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024"
-
-    bot.send_photo(message.chat.id,url)
 
 # =================
 # INTERNET SEARCH
@@ -113,113 +85,6 @@ def search(message):
             text += f"{r['title']}\n{r['href']}\n\n"
 
     bot.reply_to(message,text)
-
-# =================
-# REMINDER SET
-# =================
-
-@bot.message_handler(commands=['remind'])
-def set_reminder(message):
-
-    try:
-
-        parts = message.text.split(" ",2)
-
-        if len(parts) < 3:
-            bot.reply_to(message,"Ví dụ:\n/remind 05:15 Dậy học")
-            return
-
-        time_str = parts[1]
-        text = parts[2]
-
-        cursor.execute(
-            "INSERT INTO reminders(chat_id,time,text) VALUES(?,?,?)",
-            (message.chat.id,time_str,text)
-        )
-
-        conn.commit()
-
-        bot.reply_to(message,f"⏰ Đã đặt nhắc lúc {time_str}")
-
-    except:
-        bot.reply_to(message,"Lỗi đặt nhắc.")
-
-# =================
-# LIST REMINDER
-# =================
-
-@bot.message_handler(commands=['listremind'])
-def list_reminders(message):
-
-    cursor.execute(
-        "SELECT id,time,text FROM reminders WHERE chat_id=?",
-        (message.chat.id,)
-    )
-
-    rows = cursor.fetchall()
-
-    if len(rows)==0:
-        bot.reply_to(message,"Không có nhắc việc.")
-        return
-
-    text="📋 Nhắc việc:\n\n"
-
-    for r in rows:
-
-        text+=f"{r[0]}. {r[1]} - {r[2]}\n"
-
-    bot.reply_to(message,text)
-
-# =================
-# DELETE REMINDER
-# =================
-
-@bot.message_handler(commands=['delremind'])
-def delete_reminder(message):
-
-    try:
-
-        id=int(message.text.split(" ")[1])
-
-        cursor.execute(
-            "DELETE FROM reminders WHERE id=?",
-            (id,)
-        )
-
-        conn.commit()
-
-        bot.reply_to(message,"Đã xoá.")
-
-    except:
-
-        bot.reply_to(message,"Ví dụ:\n/delremind 1")
-
-# =================
-# CHECK REMINDER LOOP
-# =================
-
-def reminder_loop():
-
-    while True:
-
-        now=datetime.now().strftime("%H:%M")
-
-        cursor.execute("SELECT id,chat_id,time,text FROM reminders")
-
-        rows=cursor.fetchall()
-
-        for r in rows:
-
-            if r[2]==now:
-
-                bot.send_message(
-                    r[1],
-                    f"⏰ Nhắc nhở:\n{r[3]}"
-                )
-
-        time.sleep(60)
-
-threading.Thread(target=reminder_loop).start()
 
 # =================
 # FILE READER
@@ -258,14 +123,22 @@ def read_file(message):
 
     elif filename.endswith(".docx"):
 
-        text="Word file received"
+        doc = Document(filename)
 
-    text=text[:3000]
+        for para in doc.paragraphs:
+            text += para.text + "\n"
 
-    bot.reply_to(message,"📄 Nội dung file:\n\n"+text)
+    text = text[:5000]
+
+    file_memory[message.chat.id] = text
+
+    bot.reply_to(
+        message,
+        "📄 File đã đọc xong.\n\nBạn có thể hỏi về nội dung file."
+    )
 
 # =================
-# IMAGE VISION
+# IMAGE RECEIVED
 # =================
 
 @bot.message_handler(content_types=['photo'])
@@ -274,7 +147,7 @@ def vision(message):
     bot.reply_to(message,"👁 Tôi đã nhận ảnh.")
 
 # =================
-# VOICE INPUT
+# VOICE RECEIVED
 # =================
 
 @bot.message_handler(content_types=['voice'])
@@ -308,13 +181,26 @@ def chat(message):
         history = cursor.fetchall()[::-1]
 
         messages = [
-            {"role":"system",
-             "content":"Bạn là AI thông minh và luôn trả lời bằng tiếng Việt."}
+            {
+                "role":"system",
+                "content":"Bạn là AI thông minh và luôn trả lời bằng tiếng Việt."
+            }
         ]
+
+        # thêm nội dung file nếu có
+        if user_id in file_memory:
+
+            messages.append({
+                "role":"system",
+                "content":"Nội dung file:\n"+file_memory[user_id]
+            })
 
         for role,content in history:
 
-            messages.append({"role":role,"content":content})
+            messages.append({
+                "role":role,
+                "content":content
+            })
 
         response = client.chat.completions.create(
 
