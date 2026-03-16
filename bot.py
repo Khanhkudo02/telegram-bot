@@ -4,6 +4,9 @@ import requests
 import sqlite3
 import pdfplumber
 import pandas as pd
+import time
+import threading
+from datetime import datetime
 from duckduckgo_search import DDGS
 from urllib.parse import quote
 from openai import OpenAI
@@ -21,7 +24,7 @@ client = OpenAI(
 )
 
 # =================
-# MEMORY DATABASE
+# DATABASE
 # =================
 
 conn = sqlite3.connect("memory.db", check_same_thread=False)
@@ -32,6 +35,15 @@ CREATE TABLE IF NOT EXISTS history(
 user_id INTEGER,
 role TEXT,
 content TEXT
+)
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS reminders(
+id INTEGER PRIMARY KEY AUTOINCREMENT,
+chat_id INTEGER,
+time TEXT,
+text TEXT
 )
 """)
 
@@ -48,11 +60,12 @@ def start(message):
         message,
         "🤖 AI BOT ULTRA\n\n"
         "Commands:\n"
-        "/image tạo ảnh AI\n"
+        "/image tạo ảnh\n"
         "/search tìm internet\n"
-        "gửi voice\n"
-        "gửi ảnh\n"
-        "gửi file PDF/Word/Excel\n"
+        "/remind HH:MM nội dung\n"
+        "/listremind\n"
+        "/delremind id\n"
+        "gửi file / voice / ảnh"
     )
 
 # =================
@@ -102,6 +115,113 @@ def search(message):
     bot.reply_to(message,text)
 
 # =================
+# REMINDER SET
+# =================
+
+@bot.message_handler(commands=['remind'])
+def set_reminder(message):
+
+    try:
+
+        parts = message.text.split(" ",2)
+
+        if len(parts) < 3:
+            bot.reply_to(message,"Ví dụ:\n/remind 05:15 Dậy học")
+            return
+
+        time_str = parts[1]
+        text = parts[2]
+
+        cursor.execute(
+            "INSERT INTO reminders(chat_id,time,text) VALUES(?,?,?)",
+            (message.chat.id,time_str,text)
+        )
+
+        conn.commit()
+
+        bot.reply_to(message,f"⏰ Đã đặt nhắc lúc {time_str}")
+
+    except:
+        bot.reply_to(message,"Lỗi đặt nhắc.")
+
+# =================
+# LIST REMINDER
+# =================
+
+@bot.message_handler(commands=['listremind'])
+def list_reminders(message):
+
+    cursor.execute(
+        "SELECT id,time,text FROM reminders WHERE chat_id=?",
+        (message.chat.id,)
+    )
+
+    rows = cursor.fetchall()
+
+    if len(rows)==0:
+        bot.reply_to(message,"Không có nhắc việc.")
+        return
+
+    text="📋 Nhắc việc:\n\n"
+
+    for r in rows:
+
+        text+=f"{r[0]}. {r[1]} - {r[2]}\n"
+
+    bot.reply_to(message,text)
+
+# =================
+# DELETE REMINDER
+# =================
+
+@bot.message_handler(commands=['delremind'])
+def delete_reminder(message):
+
+    try:
+
+        id=int(message.text.split(" ")[1])
+
+        cursor.execute(
+            "DELETE FROM reminders WHERE id=?",
+            (id,)
+        )
+
+        conn.commit()
+
+        bot.reply_to(message,"Đã xoá.")
+
+    except:
+
+        bot.reply_to(message,"Ví dụ:\n/delremind 1")
+
+# =================
+# CHECK REMINDER LOOP
+# =================
+
+def reminder_loop():
+
+    while True:
+
+        now=datetime.now().strftime("%H:%M")
+
+        cursor.execute("SELECT id,chat_id,time,text FROM reminders")
+
+        rows=cursor.fetchall()
+
+        for r in rows:
+
+            if r[2]==now:
+
+                bot.send_message(
+                    r[1],
+                    f"⏰ Nhắc nhở:\n{r[3]}"
+                )
+
+        time.sleep(60)
+
+threading.Thread(target=reminder_loop).start()
+
+# =================
 # FILE READER
 # =================
 
@@ -140,7 +260,7 @@ def read_file(message):
 
         text="Word file received"
 
-    text = text[:3000]
+    text=text[:3000]
 
     bot.reply_to(message,"📄 Nội dung file:\n\n"+text)
 
@@ -151,7 +271,7 @@ def read_file(message):
 @bot.message_handler(content_types=['photo'])
 def vision(message):
 
-    bot.reply_to(message,"👁 Tôi đã nhận ảnh. Vision AI đang phân tích.")
+    bot.reply_to(message,"👁 Tôi đã nhận ảnh.")
 
 # =================
 # VOICE INPUT
@@ -160,7 +280,7 @@ def vision(message):
 @bot.message_handler(content_types=['voice'])
 def voice(message):
 
-    bot.reply_to(message,"🎤 Voice đã nhận (Whisper có thể thêm API).")
+    bot.reply_to(message,"🎤 Voice đã nhận.")
 
 # =================
 # CHAT AI
@@ -189,7 +309,7 @@ def chat(message):
 
         messages = [
             {"role":"system",
-             "content":"Bạn là AI thông minh, giúp tìm thông tin internet và trả lời tiếng Việt."}
+             "content":"Bạn là AI thông minh và luôn trả lời bằng tiếng Việt."}
         ]
 
         for role,content in history:
