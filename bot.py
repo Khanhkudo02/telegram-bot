@@ -17,11 +17,11 @@ def start(message):
 def chat(message):
     try:
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "user", "content": message.text}
-            ]
-        )
+    model="gpt-4o-mini",
+    messages=[
+        {"role": "user", "content": message.text}
+    ]
+)
 
         reply = response.choices[0].message.content
         bot.reply_to(message, reply)
