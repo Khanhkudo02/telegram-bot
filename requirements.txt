@@ -1,4 +1,9 @@
 pyTelegramBotAPI
 openai
-gTTS
+edge-tts
 requests
+duckduckgo-search
+pdfplumber
+pandas
+openpyxl
+pillow
