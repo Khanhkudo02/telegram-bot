@@ -1,5 +1,7 @@
 import os
 import telebot
+import requests
+from urllib.parse import quote
 from openai import OpenAI
 from gtts import gTTS
 
@@ -21,7 +23,14 @@ chat_history = {}
 # start command
 @bot.message_handler(commands=['start'])
 def start(message):
-    bot.reply_to(message, "Xin chào! Tôi là bot AI 🤖\n\nBạn có thể:\n- Chat bình thường\n- /image mô tả để tạo ảnh")
+    bot.reply_to(
+        message,
+        "Xin chào! Tôi là bot AI 🤖\n\n"
+        "Bạn có thể:\n"
+        "• Chat bình thường\n"
+        "• /image mô tả để tạo ảnh\n\n"
+        "Ví dụ:\n/image mèo phi hành gia"
+    )
 
 # tạo ảnh AI
 @bot.message_handler(commands=['image'])
@@ -29,13 +38,29 @@ def image(message):
     prompt = message.text.replace("/image", "").strip()
 
     if prompt == "":
-        bot.reply_to(message, "Hãy nhập mô tả ảnh.\nVí dụ:\n/image mèo phi hành gia")
+        bot.reply_to(
+            message,
+            "Hãy nhập mô tả ảnh.\nVí dụ:\n/image mèo phi hành gia"
+        )
         return
 
-    url = f"https://image.pollinations.ai/prompt/{prompt}"
-
     bot.send_message(message.chat.id, "🎨 Đang tạo ảnh...")
-    bot.send_photo(message.chat.id, url)
+
+    try:
+        prompt_encoded = quote(prompt)
+        url = f"https://image.pollinations.ai/prompt/{prompt_encoded}"
+
+        img = requests.get(url).content
+
+        with open("image.png", "wb") as f:
+            f.write(img)
+
+        photo = open("image.png", "rb")
+        bot.send_photo(message.chat.id, photo)
+
+    except Exception as e:
+        print("IMAGE ERROR:", e)
+        bot.reply_to(message, "Không thể tạo ảnh.")
 
 # chat AI
 @bot.message_handler(func=lambda message: True)
@@ -53,7 +78,10 @@ def chat(message):
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
-                {"role": "system", "content": "Bạn là trợ lý AI thân thiện và luôn trả lời bằng tiếng Việt."}
+                {
+                    "role": "system",
+                    "content": "Bạn là trợ lý AI thân thiện và luôn trả lời bằng tiếng Việt."
+                }
             ] + chat_history[user_id]
         )
 
@@ -69,8 +97,8 @@ def chat(message):
         tts = gTTS(reply, lang="vi")
         tts.save("voice.mp3")
 
-        voice = open("voice.mp3", "rb")
-        bot.send_voice(message.chat.id, voice)
+        with open("voice.mp3", "rb") as voice:
+            bot.send_voice(message.chat.id, voice)
 
     except Exception as e:
         print("ERROR:", e)
