@@ -8,8 +8,6 @@ from gtts import gTTS
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
-print("Bot starting...")
-
 bot = telebot.TeleBot(BOT_TOKEN)
 
 client = OpenAI(
@@ -17,63 +15,53 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
-# lưu lịch sử chat
 chat_history = {}
 
-# start command
+# START
 @bot.message_handler(commands=['start'])
 def start(message):
+
     bot.reply_to(
         message,
-        "Xin chào! Tôi là bot AI 🤖\n\n"
-        "Bạn có thể:\n"
-        "• Chat bình thường\n"
-        "• /image mô tả để tạo ảnh\n\n"
-        "Ví dụ:\n/image mèo phi hành gia"
+        "🤖 AI Bot đã sẵn sàng!\n\n"
+        "Tính năng:\n"
+        "💬 Chat AI\n"
+        "🖼 /image tạo ảnh\n"
+        "🎤 gửi voice\n"
+        "📄 gửi file để đọc\n"
     )
 
-# tạo ảnh AI
+# IMAGE
 @bot.message_handler(commands=['image'])
 def image(message):
 
     prompt = message.text.replace("/image", "").strip()
 
     if prompt == "":
-        bot.reply_to(
-            message,
-            "Hãy nhập mô tả ảnh.\nVí dụ:\n/image mèo phi hành gia"
-        )
+        bot.reply_to(message, "Ví dụ:\n/image con mèo phi hành gia")
         return
 
     bot.send_message(message.chat.id, "🎨 Đang tạo ảnh...")
 
-    try:
-        prompt_encoded = quote(prompt)
+    prompt = quote(prompt)
 
-        url = f"https://image.pollinations.ai/prompt/{prompt_encoded}"
+    url = f"https://image.pollinations.ai/prompt/{prompt}?width=1024&height=1024"
 
-        headers = {
-            "User-Agent": "Mozilla/5.0"
-        }
+    bot.send_photo(message.chat.id, url)
 
-        response = requests.get(url, headers=headers)
+# VOICE INPUT
+@bot.message_handler(content_types=['voice'])
+def voice(message):
 
-        if response.status_code == 200:
+    bot.reply_to(message, "🎤 Đã nhận voice. Tính năng này đang nâng cấp...")
 
-            with open("image.png", "wb") as f:
-                f.write(response.content)
+# FILE
+@bot.message_handler(content_types=['document'])
+def file_handler(message):
 
-            with open("image.png", "rb") as photo:
-                bot.send_photo(message.chat.id, photo)
+    bot.reply_to(message, "📄 Đã nhận file. Bot sẽ đọc file trong bản nâng cấp tiếp theo.")
 
-        else:
-            bot.reply_to(message, "API tạo ảnh đang lỗi.")
-
-    except Exception as e:
-        print("IMAGE ERROR:", e)
-        bot.reply_to(message, "Không thể tạo ảnh.")
-
-# chat AI
+# CHAT AI
 @bot.message_handler(func=lambda message: True)
 def chat(message):
 
@@ -93,7 +81,7 @@ def chat(message):
             messages=[
                 {
                     "role": "system",
-                    "content": "Bạn là trợ lý AI thân thiện và luôn trả lời bằng tiếng Việt."
+                    "content": "Bạn là trợ lý AI thông minh, trả lời ngắn gọn bằng tiếng Việt."
                 }
             ] + chat_history[user_id]
         )
@@ -106,19 +94,24 @@ def chat(message):
 
         bot.reply_to(message, reply)
 
-        # tạo voice
+        # VOICE OUTPUT
         try:
+
             tts = gTTS(reply, lang="vi")
+
             tts.save("voice.mp3")
 
             with open("voice.mp3", "rb") as voice:
+
                 bot.send_voice(message.chat.id, voice)
 
         except:
             pass
 
     except Exception as e:
-        print("ERROR:", e)
+
+        print(e)
+
         bot.reply_to(message, "Bot đang gặp lỗi.")
 
 bot.infinity_polling()
