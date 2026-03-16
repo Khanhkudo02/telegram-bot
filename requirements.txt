@@ -1,10 +1,10 @@
 pyTelegramBotAPI
 openai
 edge-tts
-requests
 duckduckgo-search
 pdfplumber
 pandas
 openpyxl
-pillow
 python-docx
+pillow
+requests
