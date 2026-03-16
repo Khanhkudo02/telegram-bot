@@ -1,14 +1,13 @@
 import os
 import telebot
-import requests
 import sqlite3
 import pdfplumber
 import pandas as pd
+from docx import Document
 from duckduckgo_search import DDGS
 from openai import OpenAI
 import edge_tts
 import asyncio
-from docx import Document
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -21,13 +20,7 @@ client = OpenAI(
 )
 
 # =================
-# FILE MEMORY
-# =================
-
-file_memory = {}
-
-# =================
-# DATABASE
+# DATABASE MEMORY
 # =================
 
 conn = sqlite3.connect("memory.db", check_same_thread=False)
@@ -43,6 +36,9 @@ content TEXT
 
 conn.commit()
 
+# lưu nội dung file
+file_memory = {}
+
 # =================
 # START
 # =================
@@ -52,13 +48,13 @@ def start(message):
 
     bot.reply_to(
         message,
-        "🤖 AI BOT\n\n"
-        "Chức năng:\n"
-        "• Chat AI\n"
-        "• /search tìm internet\n"
-        "• gửi file PDF / Word / Excel\n"
-        "• hỏi về nội dung file\n"
-        "• voice trả lời"
+        "🤖 AI BOT PRO\n\n"
+        "Tính năng:\n"
+        "💬 Chat AI\n"
+        "🌐 /search tìm internet\n"
+        "📄 gửi PDF / Word / Excel để hỏi\n"
+        "👁 gửi ảnh\n"
+        "🎤 gửi voice"
     )
 
 # =================
@@ -93,67 +89,87 @@ def search(message):
 @bot.message_handler(content_types=['document'])
 def read_file(message):
 
-    file_info = bot.get_file(message.document.file_id)
+    try:
 
-    downloaded = bot.download_file(file_info.file_path)
+        file_info = bot.get_file(message.document.file_id)
+        downloaded = bot.download_file(file_info.file_path)
 
-    filename = message.document.file_name
+        filename = message.document.file_name
 
-    with open(filename,"wb") as f:
-        f.write(downloaded)
+        with open(filename,"wb") as f:
+            f.write(downloaded)
 
-    text=""
+        text=""
 
-    if filename.endswith(".pdf"):
+        # PDF
+        if filename.endswith(".pdf"):
 
-        with pdfplumber.open(filename) as pdf:
+            with pdfplumber.open(filename) as pdf:
 
-            for page in pdf.pages:
+                for page in pdf.pages:
 
-                t = page.extract_text()
+                    t = page.extract_text()
 
-                if t:
-                    text += t
+                    if t:
+                        text += t + "\n"
 
-    elif filename.endswith(".xlsx"):
+        # Excel
+        elif filename.endswith(".xlsx"):
 
-        df = pd.read_excel(filename)
+            df = pd.read_excel(filename)
 
-        text = df.to_string()
+            text = df.to_string()
 
-    elif filename.endswith(".docx"):
+        # Word
+        elif filename.endswith(".docx"):
 
-        doc = Document(filename)
+            doc = Document(filename)
 
-        for para in doc.paragraphs:
-            text += para.text + "\n"
+            for para in doc.paragraphs:
 
-    text = text[:5000]
+                text += para.text + "\n"
 
-    file_memory[message.chat.id] = text
+        text = text[:12000]
 
-    bot.reply_to(
-        message,
-        "📄 File đã đọc xong.\n\nBạn có thể hỏi về nội dung file."
-    )
+        file_memory[message.chat.id] = text
+
+        bot.reply_to(
+            message,
+            "📄 Tôi đã đọc file.\n"
+            "Bạn có thể hỏi về nội dung file."
+        )
+
+    except Exception as e:
+
+        print(e)
+
+        bot.reply_to(message,"❌ Không đọc được file.")
 
 # =================
-# IMAGE RECEIVED
+# IMAGE
 # =================
 
 @bot.message_handler(content_types=['photo'])
 def vision(message):
 
-    bot.reply_to(message,"👁 Tôi đã nhận ảnh.")
+    bot.reply_to(
+        message,
+        "👁 Tôi đã nhận ảnh.\n"
+        "Vision AI có thể được nâng cấp thêm."
+    )
 
 # =================
-# VOICE RECEIVED
+# VOICE INPUT
 # =================
 
 @bot.message_handler(content_types=['voice'])
 def voice(message):
 
-    bot.reply_to(message,"🎤 Voice đã nhận.")
+    bot.reply_to(
+        message,
+        "🎤 Tôi đã nhận voice.\n"
+        "Có thể nâng cấp Whisper AI."
+    )
 
 # =================
 # CHAT AI
@@ -181,18 +197,21 @@ def chat(message):
         history = cursor.fetchall()[::-1]
 
         messages = [
-            {
-                "role":"system",
-                "content":"Bạn là AI thông minh và luôn trả lời bằng tiếng Việt."
-            }
+        {
+        "role":"system",
+        "content":
+        "Bạn là AI trợ lý thông minh. "
+        "Nếu có nội dung file được cung cấp thì hãy dùng nó để trả lời. "
+        "Luôn trả lời bằng tiếng Việt."
+        }
         ]
 
-        # thêm nội dung file nếu có
+        # nếu có file
         if user_id in file_memory:
 
             messages.append({
                 "role":"system",
-                "content":"Nội dung file:\n"+file_memory[user_id]
+                "content":"Nội dung file người dùng gửi:\n\n"+file_memory[user_id]
             })
 
         for role,content in history:
@@ -234,7 +253,10 @@ def chat(message):
 
 async def send_voice(text,chat_id):
 
-    communicate = edge_tts.Communicate(text,"vi-VN-HoaiMyNeural")
+    communicate = edge_tts.Communicate(
+        text,
+        "vi-VN-HoaiMyNeural"
+    )
 
     await communicate.save("voice.mp3")
 
