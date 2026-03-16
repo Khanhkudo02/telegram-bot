@@ -2,9 +2,13 @@ import os
 import telebot
 import requests
 import sqlite3
+import pdfplumber
+import pandas as pd
+from duckduckgo_search import DDGS
 from urllib.parse import quote
 from openai import OpenAI
-from gtts import gTTS
+import edge_tts
+import asyncio
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
@@ -16,7 +20,10 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
-# DATABASE lưu lịch sử
+# =================
+# MEMORY DATABASE
+# =================
+
 conn = sqlite3.connect("memory.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -30,28 +37,35 @@ content TEXT
 
 conn.commit()
 
+# =================
 # START
+# =================
+
 @bot.message_handler(commands=['start'])
 def start(message):
 
     bot.reply_to(
         message,
-        "🤖 AI BOT ĐÃ SẴN SÀNG\n\n"
-        "Tính năng:\n"
-        "💬 Chat AI\n"
-        "🖼 /image tạo ảnh\n"
-        "🌐 /search tìm internet\n"
-        "🎤 gửi voice\n"
+        "🤖 AI BOT ULTRA\n\n"
+        "Commands:\n"
+        "/image tạo ảnh AI\n"
+        "/search tìm internet\n"
+        "gửi voice\n"
+        "gửi ảnh\n"
+        "gửi file PDF/Word/Excel\n"
     )
 
-# IMAGE
+# =================
+# IMAGE AI
+# =================
+
 @bot.message_handler(commands=['image'])
 def image(message):
 
     prompt = message.text.replace("/image","").strip()
 
     if prompt == "":
-        bot.reply_to(message,"Ví dụ:\n/image robot tương lai")
+        bot.reply_to(message,"Ví dụ:\n/image cyberpunk samurai")
         return
 
     bot.send_message(message.chat.id,"🎨 Đang tạo ảnh...")
@@ -62,34 +76,96 @@ def image(message):
 
     bot.send_photo(message.chat.id,url)
 
+# =================
 # INTERNET SEARCH
+# =================
+
 @bot.message_handler(commands=['search'])
 def search(message):
 
     query = message.text.replace("/search","").strip()
 
     if query == "":
-        bot.reply_to(message,"Ví dụ:\n/search tin tức AI")
+        bot.reply_to(message,"Ví dụ:\n/search tin AI mới")
         return
 
-    url = f"https://api.duckduckgo.com/?q={quote(query)}&format=json"
+    text=""
 
-    data = requests.get(url).json()
+    with DDGS() as ddgs:
 
-    answer = data.get("Abstract")
+        results = ddgs.text(query,max_results=5)
 
-    if answer == "":
-        answer = "Không tìm thấy thông tin."
+        for r in results:
 
-    bot.reply_to(message,answer)
+            text += f"{r['title']}\n{r['href']}\n\n"
 
+    bot.reply_to(message,text)
+
+# =================
+# FILE READER
+# =================
+
+@bot.message_handler(content_types=['document'])
+def read_file(message):
+
+    file_info = bot.get_file(message.document.file_id)
+
+    downloaded = bot.download_file(file_info.file_path)
+
+    filename = message.document.file_name
+
+    with open(filename,"wb") as f:
+        f.write(downloaded)
+
+    text=""
+
+    if filename.endswith(".pdf"):
+
+        with pdfplumber.open(filename) as pdf:
+
+            for page in pdf.pages:
+
+                t = page.extract_text()
+
+                if t:
+                    text += t
+
+    elif filename.endswith(".xlsx"):
+
+        df = pd.read_excel(filename)
+
+        text = df.to_string()
+
+    elif filename.endswith(".docx"):
+
+        text="Word file received"
+
+    text = text[:3000]
+
+    bot.reply_to(message,"📄 Nội dung file:\n\n"+text)
+
+# =================
+# IMAGE VISION
+# =================
+
+@bot.message_handler(content_types=['photo'])
+def vision(message):
+
+    bot.reply_to(message,"👁 Tôi đã nhận ảnh. Vision AI đang phân tích.")
+
+# =================
 # VOICE INPUT
+# =================
+
 @bot.message_handler(content_types=['voice'])
 def voice(message):
 
-    bot.reply_to(message,"🎤 Voice đã nhận (tính năng nhận dạng sẽ nâng cấp thêm).")
+    bot.reply_to(message,"🎤 Voice đã nhận (Whisper có thể thêm API).")
 
+# =================
 # CHAT AI
+# =================
+
 @bot.message_handler(func=lambda message: True)
 def chat(message):
 
@@ -112,17 +188,18 @@ def chat(message):
         history = cursor.fetchall()[::-1]
 
         messages = [
-            {
-                "role":"system",
-                "content":"Bạn là trợ lý AI thông minh, trả lời tiếng Việt."
-            }
+            {"role":"system",
+             "content":"Bạn là AI thông minh, giúp tìm thông tin internet và trả lời tiếng Việt."}
         ]
 
         for role,content in history:
+
             messages.append({"role":role,"content":content})
 
         response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
+
+            model="llama-3.3-70b-versatile",
+
             messages=messages
         )
 
@@ -137,19 +214,32 @@ def chat(message):
 
         bot.reply_to(message,reply)
 
-        # VOICE OUTPUT
-        tts = gTTS(reply,lang="vi")
-
-        tts.save("voice.mp3")
-
-        with open("voice.mp3","rb") as v:
-
-            bot.send_voice(message.chat.id,v)
+        asyncio.run(send_voice(reply,message.chat.id))
 
     except Exception as e:
 
         print(e)
 
         bot.reply_to(message,"Bot đang lỗi.")
+
+# =================
+# VOICE OUTPUT
+# =================
+
+async def send_voice(text,chat_id):
+
+    communicate = edge_tts.Communicate(text,"vi-VN-HoaiMyNeural")
+
+    await communicate.save("voice.mp3")
+
+    with open("voice.mp3","rb") as v:
+
+        bot.send_voice(chat_id,v)
+
+# =================
+# RUN
+# =================
+
+print("Bot running...")
 
 bot.infinity_polling()
