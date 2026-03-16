@@ -22,11 +22,11 @@ def start(message):
 def chat(message):
     try:
         response = client.chat.completions.create(
-            model="llama3-8b-8192",
-            messages=[
-                {"role": "user", "content": message.text}
-            ]
-        )
+    model="llama-3.1-8b-instant",
+    messages=[
+        {"role": "user", "content": message.text}
+    ]
+)
 
         reply = response.choices[0].message.content
         bot.reply_to(message, reply)
