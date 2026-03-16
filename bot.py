@@ -35,6 +35,7 @@ def start(message):
 # tạo ảnh AI
 @bot.message_handler(commands=['image'])
 def image(message):
+
     prompt = message.text.replace("/image", "").strip()
 
     if prompt == "":
@@ -48,15 +49,25 @@ def image(message):
 
     try:
         prompt_encoded = quote(prompt)
+
         url = f"https://image.pollinations.ai/prompt/{prompt_encoded}"
 
-        img = requests.get(url).content
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-        with open("image.png", "wb") as f:
-            f.write(img)
+        response = requests.get(url, headers=headers)
 
-        photo = open("image.png", "rb")
-        bot.send_photo(message.chat.id, photo)
+        if response.status_code == 200:
+
+            with open("image.png", "wb") as f:
+                f.write(response.content)
+
+            with open("image.png", "rb") as photo:
+                bot.send_photo(message.chat.id, photo)
+
+        else:
+            bot.reply_to(message, "API tạo ảnh đang lỗi.")
 
     except Exception as e:
         print("IMAGE ERROR:", e)
@@ -65,7 +76,9 @@ def image(message):
 # chat AI
 @bot.message_handler(func=lambda message: True)
 def chat(message):
+
     try:
+
         user_id = message.chat.id
 
         if user_id not in chat_history:
@@ -94,11 +107,15 @@ def chat(message):
         bot.reply_to(message, reply)
 
         # tạo voice
-        tts = gTTS(reply, lang="vi")
-        tts.save("voice.mp3")
+        try:
+            tts = gTTS(reply, lang="vi")
+            tts.save("voice.mp3")
 
-        with open("voice.mp3", "rb") as voice:
-            bot.send_voice(message.chat.id, voice)
+            with open("voice.mp3", "rb") as voice:
+                bot.send_voice(message.chat.id, voice)
+
+        except:
+            pass
 
     except Exception as e:
         print("ERROR:", e)
