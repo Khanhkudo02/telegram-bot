@@ -10,13 +10,10 @@ import edge_tts
 import asyncio
 import requests
 
-# =================
-# CONFIG
-# =================
-
+# ================= CONFIG =================
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")  # OpenWeather
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -25,10 +22,7 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
-# =================
-# DATABASE MEMORY
-# =================
-
+# ================= DATABASE =================
 conn = sqlite3.connect("memory.db", check_same_thread=False)
 cursor = conn.cursor()
 
@@ -43,20 +37,42 @@ conn.commit()
 
 file_memory = {}
 
-# =================
-# SEARCH WEB
-# =================
+# ================= WEATHER =================
+def get_weather(city="Ho Chi Minh"):
 
+    try:
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=vi"
+
+        data = requests.get(url).json()
+
+        if "main" not in data:
+            return "❌ Không lấy được thời tiết."
+
+        temp = data["main"]["temp"]
+        humidity = data["main"]["humidity"]
+        desc = data["weather"][0]["description"]
+
+        return (
+            f"🌤 {city}\n"
+            f"🌡 Nhiệt độ: {temp}°C\n"
+            f"💧 Độ ẩm: {humidity}%\n"
+            f"☁️ {desc}"
+        )
+
+    except Exception as e:
+        print("Weather error:", e)
+        return "❌ Lỗi thời tiết."
+
+# ================= SEARCH =================
 def search_web(query):
 
     try:
         text = ""
-
         with DDGS() as ddgs:
             results = list(ddgs.text(query, max_results=5))
 
         if not results:
-            return "❌ Không tìm thấy dữ liệu."
+            return "❌ Không tìm thấy."
 
         for r in results:
             text += f"{r['title']}\n{r['body']}\n\n"
@@ -64,67 +80,33 @@ def search_web(query):
         return text.strip()
 
     except Exception as e:
-        print("SEARCH ERROR:", e)
-        return "❌ Lỗi tìm kiếm internet."
+        print("Search error:", e)
+        return "❌ Lỗi tìm kiếm."
 
-# =================
-# WEATHER API
-# =================
-
-def get_weather(city="Ho Chi Minh"):
-
-    try:
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=vi"
-
-        res = requests.get(url).json()
-
-        temp = res["main"]["temp"]
-        desc = res["weather"][0]["description"]
-        humidity = res["main"]["humidity"]
-
-        return (
-            f"🌤 Thời tiết {city}\n"
-            f"🌡 Nhiệt độ: {temp}°C\n"
-            f"💧 Độ ẩm: {humidity}%\n"
-            f"☁️ Trạng thái: {desc}"
-        )
-
-    except Exception as e:
-        print("WEATHER ERROR:", e)
-        return None
-
-# =================
-# START
-# =================
-
+# ================= START =================
 @bot.message_handler(commands=['start'])
 def start(message):
-
     bot.reply_to(
         message,
-        "🤖 AI BOT PRO MAX\n\n"
+        "🤖 AI BOT PRO\n\n"
         "💬 Chat AI\n"
-        "🌐 Tự tìm internet\n"
-        "🌤 Thời tiết realtime\n"
+        "🌤 Thời tiết\n"
+        "🌐 Tìm kiếm\n"
         "📄 Đọc file\n"
-        "🎤 Voice trả lời"
+        "🎤 Voice"
     )
 
-# =================
-# FILE READER
-# =================
-
+# ================= FILE =================
 @bot.message_handler(content_types=['document'])
 def read_file(message):
 
     try:
-
         file_info = bot.get_file(message.document.file_id)
         downloaded = bot.download_file(file_info.file_path)
 
         filename = message.document.file_name
 
-        with open(filename,"wb") as f:
+        with open(filename, "wb") as f:
             f.write(downloaded)
 
         text = ""
@@ -145,53 +127,37 @@ def read_file(message):
             for para in doc.paragraphs:
                 text += para.text + "\n"
 
-        text = text[:12000]
+        file_memory[message.chat.id] = text[:12000]
 
-        file_memory[message.chat.id] = text
-
-        bot.reply_to(message,"📄 Đã đọc file. Hãy hỏi nội dung.")
+        bot.reply_to(message, "📄 Đã đọc file. Hãy hỏi nội dung.")
 
     except Exception as e:
         print(e)
-        bot.reply_to(message,"❌ Không đọc được file.")
+        bot.reply_to(message, "❌ Không đọc được file.")
 
-# =================
-# CHAT AI
-# =================
-
+# ================= CHAT =================
 @bot.message_handler(func=lambda message: True)
 def chat(message):
 
     try:
-
         user_id = message.chat.id
         text = message.text.lower()
 
-        # ===== WEATHER REALTIME =====
+        # ===== WEATHER =====
         if "thời tiết" in text:
-
-            weather = get_weather("Ho Chi Minh")
-
-            if weather:
-                bot.reply_to(message, weather)
-            else:
-                result = search_web(message.text + " Việt Nam hôm nay")
-                bot.reply_to(message, "🌐 " + result)
-
+            bot.reply_to(message, get_weather())
             return
 
-        # ===== AUTO SEARCH =====
-        if any(x in text for x in ["tin tức","giá vàng","usd","bitcoin"]):
-
+        # ===== SEARCH =====
+        if any(x in text for x in ["tin tức", "giá vàng", "bitcoin", "usd"]):
             result = search_web(message.text)
-
-            bot.reply_to(message,"🌐 Thông tin:\n\n"+result)
+            bot.reply_to(message, "🌐 " + result)
             return
 
         # ===== SAVE HISTORY =====
         cursor.execute(
             "INSERT INTO history VALUES(?,?,?)",
-            (user_id,"user",message.text)
+            (user_id, "user", message.text)
         )
         conn.commit()
 
@@ -203,26 +169,26 @@ def chat(message):
         history = cursor.fetchall()[::-1]
 
         messages = [
-        {
-        "role":"system",
-        "content":(
-        "Bạn là AI trợ lý thông minh.\n"
-        "Nếu có nội dung file thì dùng nó để trả lời.\n"
-        "Luôn trả lời bằng tiếng Việt."
-        )
-        }
+            {
+                "role": "system",
+                "content": (
+                    "Bạn là AI trợ lý thông minh.\n"
+                    "Nếu có nội dung file thì dùng để trả lời.\n"
+                    "Luôn trả lời bằng tiếng Việt."
+                )
+            }
         ]
 
         if user_id in file_memory:
             messages.append({
-                "role":"system",
-                "content":"Nội dung file:\n\n"+file_memory[user_id]
+                "role": "system",
+                "content": "Nội dung file:\n\n" + file_memory[user_id]
             })
 
-        for role,content in history:
+        for role, content in history:
             messages.append({
-                "role":role,
-                "content":content
+                "role": role,
+                "content": content
             })
 
         response = client.chat.completions.create(
@@ -234,37 +200,31 @@ def chat(message):
 
         cursor.execute(
             "INSERT INTO history VALUES(?,?,?)",
-            (user_id,"assistant",reply)
+            (user_id, "assistant", reply)
         )
         conn.commit()
 
-        bot.reply_to(message,reply)
+        bot.reply_to(message, reply)
 
-        asyncio.run(send_voice(reply,user_id))
+        asyncio.run(send_voice(reply, user_id))
 
     except Exception as e:
         print(e)
-        bot.reply_to(message,"❌ Bot lỗi.")
+        bot.reply_to(message, "❌ Bot lỗi.")
 
-# =================
-# VOICE OUTPUT
-# =================
-
-async def send_voice(text,chat_id):
+# ================= VOICE =================
+async def send_voice(text, chat_id):
 
     try:
-        communicate = edge_tts.Communicate(text,"vi-VN-HoaiMyNeural")
+        communicate = edge_tts.Communicate(text, "vi-VN-HoaiMyNeural")
         await communicate.save("voice.mp3")
 
-        with open("voice.mp3","rb") as v:
-            bot.send_voice(chat_id,v)
+        with open("voice.mp3", "rb") as v:
+            bot.send_voice(chat_id, v)
 
     except:
         pass
 
-# =================
-# RUN
-# =================
-
+# ================= RUN =================
 print("Bot running...")
 bot.infinity_polling()
