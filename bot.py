@@ -9,6 +9,10 @@ from openai import OpenAI
 import edge_tts
 import asyncio
 
+# =================
+# CONFIG
+# =================
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -61,6 +65,20 @@ def start(message):
 # INTERNET SEARCH
 # =================
 
+def search_web(query):
+
+    text = ""
+
+    with DDGS() as ddgs:
+
+        results = ddgs.text(query, max_results=3)
+
+        for r in results:
+            text += f"{r['title']}\n{r['body']}\n\n"
+
+    return text
+
+
 @bot.message_handler(commands=['search'])
 def search(message):
 
@@ -70,17 +88,9 @@ def search(message):
         bot.reply_to(message,"Ví dụ:\n/search tin AI mới")
         return
 
-    text=""
+    result = search_web(query)
 
-    with DDGS() as ddgs:
-
-        results = ddgs.text(query,max_results=5)
-
-        for r in results:
-
-            text += f"{r['title']}\n{r['href']}\n\n"
-
-    bot.reply_to(message,text)
+    bot.reply_to(message,"🌐 Kết quả:\n\n"+result)
 
 # =================
 # FILE READER
@@ -99,17 +109,14 @@ def read_file(message):
         with open(filename,"wb") as f:
             f.write(downloaded)
 
-        text=""
+        text = ""
 
         # PDF
         if filename.endswith(".pdf"):
 
             with pdfplumber.open(filename) as pdf:
-
                 for page in pdf.pages:
-
                     t = page.extract_text()
-
                     if t:
                         text += t + "\n"
 
@@ -117,16 +124,13 @@ def read_file(message):
         elif filename.endswith(".xlsx"):
 
             df = pd.read_excel(filename)
-
             text = df.to_string()
 
         # Word
         elif filename.endswith(".docx"):
 
             doc = Document(filename)
-
             for para in doc.paragraphs:
-
                 text += para.text + "\n"
 
         text = text[:12000]
@@ -135,14 +139,12 @@ def read_file(message):
 
         bot.reply_to(
             message,
-            "📄 Tôi đã đọc file.\n"
-            "Bạn có thể hỏi về nội dung file."
+            "📄 Tôi đã đọc file.\nBạn có thể hỏi về nội dung file."
         )
 
     except Exception as e:
 
         print(e)
-
         bot.reply_to(message,"❌ Không đọc được file.")
 
 # =================
@@ -154,8 +156,7 @@ def vision(message):
 
     bot.reply_to(
         message,
-        "👁 Tôi đã nhận ảnh.\n"
-        "Vision AI có thể được nâng cấp thêm."
+        "👁 Tôi đã nhận ảnh (chưa bật Vision AI thật)."
     )
 
 # =================
@@ -167,8 +168,7 @@ def voice(message):
 
     bot.reply_to(
         message,
-        "🎤 Tôi đã nhận voice.\n"
-        "Có thể nâng cấp Whisper AI."
+        "🎤 Tôi đã nhận voice (chưa bật Whisper)."
     )
 
 # =================
@@ -181,12 +181,21 @@ def chat(message):
     try:
 
         user_id = message.chat.id
+        user_text = message.text.lower()
 
+        # ===== AUTO SEARCH =====
+        if any(x in user_text for x in ["thời tiết","tin tức","giá vàng","giá usd"]):
+
+            result = search_web(message.text)
+
+            bot.reply_to(message,"🌐 Thông tin:\n\n"+result)
+            return
+
+        # ===== SAVE HISTORY =====
         cursor.execute(
             "INSERT INTO history VALUES(?,?,?)",
             (user_id,"user",message.text)
         )
-
         conn.commit()
 
         cursor.execute(
@@ -196,24 +205,28 @@ def chat(message):
 
         history = cursor.fetchall()[::-1]
 
+        # ===== SYSTEM PROMPT =====
         messages = [
         {
         "role":"system",
-        "content":
-        "Bạn là AI trợ lý thông minh. "
-        "Nếu có nội dung file được cung cấp thì hãy dùng nó để trả lời. "
+        "content":(
+        "Bạn là AI trợ lý thông minh.\n"
+        "Nếu hệ thống cung cấp nội dung file thì đó là file người dùng vừa gửi.\n"
+        "Hãy đọc nội dung đó và trả lời câu hỏi dựa trên file.\n"
         "Luôn trả lời bằng tiếng Việt."
+        )
         }
         ]
 
-        # nếu có file
+        # ===== FILE MEMORY =====
         if user_id in file_memory:
 
             messages.append({
                 "role":"system",
-                "content":"Nội dung file người dùng gửi:\n\n"+file_memory[user_id]
+                "content":"Đây là nội dung file người dùng gửi:\n\n" + file_memory[user_id]
             })
 
+        # ===== HISTORY =====
         for role,content in history:
 
             messages.append({
@@ -221,31 +234,30 @@ def chat(message):
                 "content":content
             })
 
+        # ===== AI CALL =====
         response = client.chat.completions.create(
-
             model="llama-3.3-70b-versatile",
-
             messages=messages
         )
 
         reply = response.choices[0].message.content
 
+        # ===== SAVE AI =====
         cursor.execute(
             "INSERT INTO history VALUES(?,?,?)",
             (user_id,"assistant",reply)
         )
-
         conn.commit()
 
         bot.reply_to(message,reply)
 
+        # ===== VOICE OUTPUT =====
         asyncio.run(send_voice(reply,message.chat.id))
 
     except Exception as e:
 
         print(e)
-
-        bot.reply_to(message,"Bot đang lỗi.")
+        bot.reply_to(message,"❌ Bot đang lỗi.")
 
 # =================
 # VOICE OUTPUT
@@ -253,16 +265,20 @@ def chat(message):
 
 async def send_voice(text,chat_id):
 
-    communicate = edge_tts.Communicate(
-        text,
-        "vi-VN-HoaiMyNeural"
-    )
+    try:
 
-    await communicate.save("voice.mp3")
+        communicate = edge_tts.Communicate(
+            text,
+            "vi-VN-HoaiMyNeural"
+        )
 
-    with open("voice.mp3","rb") as v:
+        await communicate.save("voice.mp3")
 
-        bot.send_voice(chat_id,v)
+        with open("voice.mp3","rb") as v:
+            bot.send_voice(chat_id,v)
+
+    except:
+        pass
 
 # =================
 # RUN
