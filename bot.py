@@ -8,6 +8,7 @@ from duckduckgo_search import DDGS
 from openai import OpenAI
 import edge_tts
 import asyncio
+import requests
 
 # =================
 # CONFIG
@@ -15,6 +16,7 @@ import asyncio
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")  # OpenWeather
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -37,11 +39,59 @@ role TEXT,
 content TEXT
 )
 """)
-
 conn.commit()
 
-# lưu nội dung file
 file_memory = {}
+
+# =================
+# SEARCH WEB
+# =================
+
+def search_web(query):
+
+    try:
+        text = ""
+
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=5))
+
+        if not results:
+            return "❌ Không tìm thấy dữ liệu."
+
+        for r in results:
+            text += f"{r['title']}\n{r['body']}\n\n"
+
+        return text.strip()
+
+    except Exception as e:
+        print("SEARCH ERROR:", e)
+        return "❌ Lỗi tìm kiếm internet."
+
+# =================
+# WEATHER API
+# =================
+
+def get_weather(city="Ho Chi Minh"):
+
+    try:
+        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=vi"
+
+        res = requests.get(url).json()
+
+        temp = res["main"]["temp"]
+        desc = res["weather"][0]["description"]
+        humidity = res["main"]["humidity"]
+
+        return (
+            f"🌤 Thời tiết {city}\n"
+            f"🌡 Nhiệt độ: {temp}°C\n"
+            f"💧 Độ ẩm: {humidity}%\n"
+            f"☁️ Trạng thái: {desc}"
+        )
+
+    except Exception as e:
+        print("WEATHER ERROR:", e)
+        return None
 
 # =================
 # START
@@ -52,45 +102,13 @@ def start(message):
 
     bot.reply_to(
         message,
-        "🤖 AI BOT PRO\n\n"
-        "Tính năng:\n"
+        "🤖 AI BOT PRO MAX\n\n"
         "💬 Chat AI\n"
-        "🌐 /search tìm internet\n"
-        "📄 gửi PDF / Word / Excel để hỏi\n"
-        "👁 gửi ảnh\n"
-        "🎤 gửi voice"
+        "🌐 Tự tìm internet\n"
+        "🌤 Thời tiết realtime\n"
+        "📄 Đọc file\n"
+        "🎤 Voice trả lời"
     )
-
-# =================
-# INTERNET SEARCH
-# =================
-
-def search_web(query):
-
-    text = ""
-
-    with DDGS() as ddgs:
-
-        results = ddgs.text(query, max_results=3)
-
-        for r in results:
-            text += f"{r['title']}\n{r['body']}\n\n"
-
-    return text
-
-
-@bot.message_handler(commands=['search'])
-def search(message):
-
-    query = message.text.replace("/search","").strip()
-
-    if query == "":
-        bot.reply_to(message,"Ví dụ:\n/search tin AI mới")
-        return
-
-    result = search_web(query)
-
-    bot.reply_to(message,"🌐 Kết quả:\n\n"+result)
 
 # =================
 # FILE READER
@@ -111,24 +129,18 @@ def read_file(message):
 
         text = ""
 
-        # PDF
         if filename.endswith(".pdf"):
-
             with pdfplumber.open(filename) as pdf:
                 for page in pdf.pages:
                     t = page.extract_text()
                     if t:
                         text += t + "\n"
 
-        # Excel
         elif filename.endswith(".xlsx"):
-
             df = pd.read_excel(filename)
             text = df.to_string()
 
-        # Word
         elif filename.endswith(".docx"):
-
             doc = Document(filename)
             for para in doc.paragraphs:
                 text += para.text + "\n"
@@ -137,39 +149,11 @@ def read_file(message):
 
         file_memory[message.chat.id] = text
 
-        bot.reply_to(
-            message,
-            "📄 Tôi đã đọc file.\nBạn có thể hỏi về nội dung file."
-        )
+        bot.reply_to(message,"📄 Đã đọc file. Hãy hỏi nội dung.")
 
     except Exception as e:
-
         print(e)
         bot.reply_to(message,"❌ Không đọc được file.")
-
-# =================
-# IMAGE
-# =================
-
-@bot.message_handler(content_types=['photo'])
-def vision(message):
-
-    bot.reply_to(
-        message,
-        "👁 Tôi đã nhận ảnh (chưa bật Vision AI thật)."
-    )
-
-# =================
-# VOICE INPUT
-# =================
-
-@bot.message_handler(content_types=['voice'])
-def voice(message):
-
-    bot.reply_to(
-        message,
-        "🎤 Tôi đã nhận voice (chưa bật Whisper)."
-    )
 
 # =================
 # CHAT AI
@@ -181,10 +165,23 @@ def chat(message):
     try:
 
         user_id = message.chat.id
-        user_text = message.text.lower()
+        text = message.text.lower()
+
+        # ===== WEATHER REALTIME =====
+        if "thời tiết" in text:
+
+            weather = get_weather("Ho Chi Minh")
+
+            if weather:
+                bot.reply_to(message, weather)
+            else:
+                result = search_web(message.text + " Việt Nam hôm nay")
+                bot.reply_to(message, "🌐 " + result)
+
+            return
 
         # ===== AUTO SEARCH =====
-        if any(x in user_text for x in ["thời tiết","tin tức","giá vàng","giá usd"]):
+        if any(x in text for x in ["tin tức","giá vàng","usd","bitcoin"]):
 
             result = search_web(message.text)
 
@@ -205,36 +202,29 @@ def chat(message):
 
         history = cursor.fetchall()[::-1]
 
-        # ===== SYSTEM PROMPT =====
         messages = [
         {
         "role":"system",
         "content":(
         "Bạn là AI trợ lý thông minh.\n"
-        "Nếu hệ thống cung cấp nội dung file thì đó là file người dùng vừa gửi.\n"
-        "Hãy đọc nội dung đó và trả lời câu hỏi dựa trên file.\n"
+        "Nếu có nội dung file thì dùng nó để trả lời.\n"
         "Luôn trả lời bằng tiếng Việt."
         )
         }
         ]
 
-        # ===== FILE MEMORY =====
         if user_id in file_memory:
-
             messages.append({
                 "role":"system",
-                "content":"Đây là nội dung file người dùng gửi:\n\n" + file_memory[user_id]
+                "content":"Nội dung file:\n\n"+file_memory[user_id]
             })
 
-        # ===== HISTORY =====
         for role,content in history:
-
             messages.append({
                 "role":role,
                 "content":content
             })
 
-        # ===== AI CALL =====
         response = client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=messages
@@ -242,7 +232,6 @@ def chat(message):
 
         reply = response.choices[0].message.content
 
-        # ===== SAVE AI =====
         cursor.execute(
             "INSERT INTO history VALUES(?,?,?)",
             (user_id,"assistant",reply)
@@ -251,13 +240,11 @@ def chat(message):
 
         bot.reply_to(message,reply)
 
-        # ===== VOICE OUTPUT =====
-        asyncio.run(send_voice(reply,message.chat.id))
+        asyncio.run(send_voice(reply,user_id))
 
     except Exception as e:
-
         print(e)
-        bot.reply_to(message,"❌ Bot đang lỗi.")
+        bot.reply_to(message,"❌ Bot lỗi.")
 
 # =================
 # VOICE OUTPUT
@@ -266,12 +253,7 @@ def chat(message):
 async def send_voice(text,chat_id):
 
     try:
-
-        communicate = edge_tts.Communicate(
-            text,
-            "vi-VN-HoaiMyNeural"
-        )
-
+        communicate = edge_tts.Communicate(text,"vi-VN-HoaiMyNeural")
         await communicate.save("voice.mp3")
 
         with open("voice.mp3","rb") as v:
@@ -285,5 +267,4 @@ async def send_voice(text,chat_id):
 # =================
 
 print("Bot running...")
-
 bot.infinity_polling()
