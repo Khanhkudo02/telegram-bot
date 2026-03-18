@@ -8,6 +8,10 @@ from features.file_reader import handle_file
 from features.voice import send_voice
 from features.menu import main_menu
 
+# 👉 NEW
+from features.ocr import handle_image
+from features.speech_to_text import voice_to_text
+
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -19,8 +23,6 @@ def start(message):
         "🤖 AI BOT PRO\n\nChọn chức năng bên dưới 👇",
         reply_markup=main_menu()
     )
-
-    # ép Telegram hiển thị menu
     bot.send_message(message.chat.id, "👇 Menu sẵn sàng")
 
 # ===== FILE =====
@@ -28,11 +30,46 @@ def start(message):
 def file_handler(message):
     handle_file(bot, message)
 
+# ===== OCR IMAGE =====
+@bot.message_handler(content_types=['photo'])
+def image_handler(message):
+    handle_image(bot, message)
+
+# ===== VOICE INPUT =====
+@bot.message_handler(content_types=['voice'])
+def handle_voice(message):
+    try:
+        file_info = bot.get_file(message.voice.file_id)
+        downloaded = bot.download_file(file_info.file_path)
+
+        with open("voice.ogg", "wb") as f:
+            f.write(downloaded)
+
+        # 👉 chuyển voice -> text
+        text = voice_to_text("voice.ogg")
+
+        bot.send_message(message.chat.id, f"📝 Bạn nói: {text}")
+
+        # 👉 AI trả lời
+        reply = ask_ai(text, message.chat.id)
+
+        bot.send_message(message.chat.id, reply, reply_markup=main_menu())
+
+        # 👉 đọc lại bằng voice (giới hạn để tránh lag)
+        send_voice(reply[:500], message.chat.id, bot)
+
+    except Exception as e:
+        print(e)
+        bot.send_message(message.chat.id, "❌ Không nhận diện được giọng nói.")
+
 # ===== CHAT =====
 @bot.message_handler(func=lambda message: True)
 def chat(message):
 
     text = message.text
+
+    if not text:
+        return
 
     # ===== MENU BUTTON =====
     if text == "🌤 Thời tiết":
@@ -52,7 +89,7 @@ def chat(message):
         return
 
     if text == "🎤 Voice":
-        bot.send_message(message.chat.id, "🎤 Tôi sẽ đọc nội dung bạn gửi.", reply_markup=main_menu())
+        bot.send_message(message.chat.id, "🎤 Hãy gửi voice cho tôi.", reply_markup=main_menu())
         return
 
     # ===== LOGIC CŨ =====
@@ -67,11 +104,16 @@ def chat(message):
         return
 
     # ===== AI =====
-    reply = ask_ai(text, message.chat.id)
+    try:
+        reply = ask_ai(text, message.chat.id)
 
-    bot.send_message(message.chat.id, reply, reply_markup=main_menu())
+        bot.send_message(message.chat.id, reply, reply_markup=main_menu())
 
-    send_voice(reply, message.chat.id, bot)
+        send_voice(reply[:500], message.chat.id, bot)
+
+    except Exception as e:
+        print(e)
+        bot.send_message(message.chat.id, "❌ Lỗi AI, thử lại sau.")
 
 # ===== RUN =====
 print("Bot running...")
