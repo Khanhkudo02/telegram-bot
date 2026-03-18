@@ -13,19 +13,21 @@ def handle_image(bot, message):
         with open("image.jpg", "wb") as f:
             f.write(downloaded)
 
-        # ===== OCR =====
-        text = pytesseract.image_to_string(Image.open("image.jpg"), lang="vie")
+        try:
+            text = pytesseract.image_to_string(Image.open("image.jpg"), lang="vie+eng")
+        except:
+            text = pytesseract.image_to_string(Image.open("image.jpg"))
 
-        # ===== SAVE DB =====
+        if not text.strip():
+            bot.reply_to(message, "❌ Không đọc được chữ trong ảnh.")
+            return
+
         cursor.execute("DELETE FROM files WHERE user_id=?", (message.chat.id,))
-        cursor.execute(
-            "INSERT INTO files VALUES(?,?)",
-            (message.chat.id, text[:12000])
-        )
+        cursor.execute("INSERT INTO files VALUES(?,?)", (message.chat.id, text[:12000]))
         conn.commit()
 
         bot.reply_to(message, "📸 Đã đọc ảnh. Hãy hỏi nội dung.")
 
     except Exception as e:
         print(e)
-        bot.reply_to(message, "❌ Không đọc được ảnh.")
+        bot.reply_to(message, "❌ Lỗi OCR.")
