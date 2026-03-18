@@ -8,5 +8,6 @@ openpyxl
 python-docx
 pillow
 requests
+pytesseract
 openai-whisper
 ffmpeg-python
