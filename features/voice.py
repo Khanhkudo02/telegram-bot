@@ -10,6 +10,9 @@ async def _voice(text, chat_id, bot):
 
 def send_voice(text, chat_id, bot):
     try:
-        asyncio.run(_voice(text, chat_id, bot))
-    except:
-        pass
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        loop.run_until_complete(_voice(text[:500], chat_id, bot))
+        loop.close()
+    except Exception as e:
+        print(e)
