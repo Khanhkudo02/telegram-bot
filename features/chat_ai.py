@@ -1,7 +1,6 @@
 import os
 import sqlite3
 from openai import OpenAI
-from features.file_reader import file_memory  # 👈 FIX QUAN TRỌNG
 
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 
@@ -10,16 +9,25 @@ client = OpenAI(
     base_url="https://api.groq.com/openai/v1"
 )
 
+# ===== DATABASE =====
 conn = sqlite3.connect("memory.db", check_same_thread=False)
 cursor = conn.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS history(
-user_id INTEGER,
-role TEXT,
-content TEXT
+    user_id INTEGER,
+    role TEXT,
+    content TEXT
 )
 """)
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS files(
+    user_id INTEGER,
+    content TEXT
+)
+""")
+
 conn.commit()
 
 
@@ -51,11 +59,18 @@ def ask_ai(text, user_id):
         }
     ]
 
-    # ===== 👉 FIX FILE MEMORY Ở ĐÂY =====
-    if user_id in file_memory:
+    # ===== 👉 LOAD FILE TỪ DATABASE =====
+    cursor.execute(
+        "SELECT content FROM files WHERE user_id=?",
+        (user_id,)
+    )
+
+    file_data = cursor.fetchone()
+
+    if file_data:
         messages.append({
             "role": "system",
-            "content": "Nội dung file:\n\n" + file_memory[user_id]
+            "content": "Nội dung file:\n\n" + file_data[0]
         })
 
     # ===== HISTORY =====
