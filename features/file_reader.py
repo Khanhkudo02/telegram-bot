@@ -1,8 +1,20 @@
 import pdfplumber
 import pandas as pd
 from docx import Document
+import sqlite3
 
-file_memory = {}
+# ===== DATABASE =====
+conn = sqlite3.connect("memory.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS files(
+    user_id INTEGER,
+    content TEXT
+)
+""")
+conn.commit()
+
 
 def handle_file(bot, message):
 
@@ -17,6 +29,7 @@ def handle_file(bot, message):
 
         text = ""
 
+        # ===== READ FILE =====
         if filename.endswith(".pdf"):
             with pdfplumber.open(filename) as pdf:
                 for page in pdf.pages:
@@ -33,9 +46,16 @@ def handle_file(bot, message):
             for para in doc.paragraphs:
                 text += para.text + "\n"
 
-        file_memory[message.chat.id] = text[:12000]
+        # ===== SAVE TO DATABASE (FIX QUAN TRỌNG) =====
+        cursor.execute("DELETE FROM files WHERE user_id=?", (message.chat.id,))
+        cursor.execute(
+            "INSERT INTO files VALUES(?,?)",
+            (message.chat.id, text[:12000])
+        )
+        conn.commit()
 
         bot.reply_to(message, "📄 Đã đọc file. Hãy hỏi nội dung.")
 
-    except:
+    except Exception as e:
+        print(e)
         bot.reply_to(message, "❌ Không đọc được file.")
