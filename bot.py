@@ -6,7 +6,7 @@ from features.search import search_web
 from features.chat_ai import ask_ai
 from features.file_reader import handle_file
 from features.voice import send_voice
-from features.menu import main_menu   # 👈 thêm dòng này
+from features.menu import main_menu
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 bot = telebot.TeleBot(BOT_TOKEN)
@@ -19,6 +19,9 @@ def start(message):
         "🤖 AI BOT PRO\n\nChọn chức năng bên dưới 👇",
         reply_markup=main_menu()
     )
+
+    # ép Telegram hiển thị menu
+    bot.send_message(message.chat.id, "👇 Menu sẵn sàng")
 
 # ===== FILE =====
 @bot.message_handler(content_types=['document'])
@@ -33,38 +36,40 @@ def chat(message):
 
     # ===== MENU BUTTON =====
     if text == "🌤 Thời tiết":
-        bot.reply_to(message, get_weather())
+        bot.send_message(message.chat.id, get_weather(), reply_markup=main_menu())
         return
 
     if text == "🌐 Tìm kiếm":
-        bot.reply_to(message, "🔎 Nhập nội dung cần tìm:")
+        bot.send_message(message.chat.id, "🔎 Nhập nội dung cần tìm:", reply_markup=main_menu())
         return
 
     if text == "🤖 Chat AI":
-        bot.reply_to(message, "💬 Hãy hỏi tôi bất cứ điều gì!")
+        bot.send_message(message.chat.id, "💬 Hãy hỏi tôi bất cứ điều gì!", reply_markup=main_menu())
         return
 
     if text == "📄 Đọc file":
-        bot.reply_to(message, "📎 Gửi file cho tôi.")
+        bot.send_message(message.chat.id, "📎 Gửi file cho tôi.", reply_markup=main_menu())
         return
 
     if text == "🎤 Voice":
-        bot.reply_to(message, "🎤 Tôi sẽ đọc nội dung bạn gửi.")
+        bot.send_message(message.chat.id, "🎤 Tôi sẽ đọc nội dung bạn gửi.", reply_markup=main_menu())
         return
 
     # ===== LOGIC CŨ =====
     text_lower = text.lower()
 
     if "thời tiết" in text_lower:
-        bot.reply_to(message, get_weather())
+        bot.send_message(message.chat.id, get_weather(), reply_markup=main_menu())
         return
 
     if any(x in text_lower for x in ["tin tức", "bitcoin", "usd", "giá vàng"]):
-        bot.reply_to(message, search_web(text))
+        bot.send_message(message.chat.id, search_web(text), reply_markup=main_menu())
         return
 
+    # ===== AI =====
     reply = ask_ai(text, message.chat.id)
-    bot.reply_to(message, reply)
+
+    bot.send_message(message.chat.id, reply, reply_markup=main_menu())
 
     send_voice(reply, message.chat.id, bot)
 
