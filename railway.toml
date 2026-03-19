@@ -5,4 +5,4 @@ builder = "NIXPACKS"
 nixPkgs = ["ffmpeg", "tesseract"]
 
 [deploy]
-startCommand = "python bot.py"
+startCommand = "python3 bot.py"
