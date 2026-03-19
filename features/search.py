@@ -1,18 +1,21 @@
-from duckduckgo_search import DDGS
+import os
+import requests
 
-def search_web(query):
+API_KEY = os.getenv("OPENAI_API_KEY")
+
+def voice_to_text(path):
     try:
-        text = ""
-        with DDGS() as ddgs:
-            results = list(ddgs.text(query, max_results=5))
+        url = "https://api.openai.com/v1/audio/transcriptions"
 
-        if not results:
-            return "❌ Không tìm thấy."
+        headers = {"Authorization": f"Bearer {API_KEY}"}
+        files = {
+            "file": open(path, "rb"),
+            "model": (None, "whisper-1")
+        }
 
-        for r in results:
-            text += f"{r['title']}\n{r['body']}\n\n"
+        res = requests.post(url, headers=headers, files=files)
+        return res.json().get("text", "❌ lỗi voice")
 
-        return text.strip()
-
-    except:
-        return "❌ Lỗi tìm kiếm."
+    except Exception as e:
+        print(e)
+        return "❌ lỗi voice"
