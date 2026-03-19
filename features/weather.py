@@ -1,22 +1,11 @@
-import requests
-import os
+import requests, os
 
-WEATHER_API_KEY = os.getenv("WEATHER_API_KEY")
+def get_weather(city):
+    key = os.getenv("WEATHER_API_KEY")
+    url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={key}&units=metric"
 
-def get_weather(city="Ho Chi Minh"):
     try:
-        url = f"http://api.openweathermap.org/data/2.5/weather?q={city}&appid={WEATHER_API_KEY}&units=metric&lang=vi"
-        data = requests.get(url).json()
-
-        if "main" not in data:
-            return "❌ Không lấy được thời tiết."
-
-        return (
-            f"🌤 {city}\n"
-            f"🌡 {data['main']['temp']}°C\n"
-            f"💧 {data['main']['humidity']}%\n"
-            f"☁️ {data['weather'][0]['description']}"
-        )
-
+        d = requests.get(url).json()
+        return f"{city}: {d['main']['temp']}°C"
     except:
-        return "❌ Lỗi thời tiết."
+        return "❌ lỗi thời tiết"
