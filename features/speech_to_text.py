@@ -1,12 +1,21 @@
-import whisper
+import os
+import requests
 
-# load model (chỉ load 1 lần)
-model = whisper.load_model("base")
+API_KEY = os.getenv("OPENAI_API_KEY")
 
-def voice_to_text(file_path):
+def voice_to_text(path):
     try:
-        result = model.transcribe(file_path)
-        return result["text"]
+        url = "https://api.openai.com/v1/audio/transcriptions"
+
+        headers = {"Authorization": f"Bearer {API_KEY}"}
+        files = {
+            "file": open(path, "rb"),
+            "model": (None, "whisper-1")
+        }
+
+        res = requests.post(url, headers=headers, files=files)
+        return res.json().get("text", "❌ lỗi voice")
+
     except Exception as e:
-        print("STT error:", e)
-        return "❌ Không nhận diện được giọng nói"
+        print(e)
+        return "❌ lỗi voice"
