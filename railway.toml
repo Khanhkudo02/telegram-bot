@@ -2,7 +2,7 @@
 builder = "NIXPACKS"
 
 [build.nixpacksPlan.phases.setup]
-nixPkgs = ["tesseract", "ffmpeg", "tesseract-lang"]
+nixPkgs = ["ffmpeg", "tesseract"]
 
 [deploy]
 startCommand = "python bot.py"
