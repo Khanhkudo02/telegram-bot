@@ -1,8 +1,14 @@
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
 
 def main_menu():
-    m = ReplyKeyboardMarkup(resize_keyboard=True)
-    m.row("🤖 Chat AI","🌤 Thời tiết")
-    m.row("🌐 Tìm kiếm","📄 Đọc file")
-    m.row("🎤 Voice")
-    return m
+    markup = ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    markup.add(
+        KeyboardButton("🤖 Chat AI"),
+        KeyboardButton("🌤 Thời tiết")
+    )
+    markup.add(
+        KeyboardButton("🌐 Tìm kiếm"),
+        KeyboardButton("📄 Đọc file")
+    )
+    markup.add(KeyboardButton("🎤 Voice"))
+    return markup
