@@ -74,9 +74,9 @@ def ask_ai(text, user_id):
         for role, content in history:
             messages.append({"role": role, "content": content})
 
-        # Gọi Groq API
+        # Gọi Groq API - SỬA MODEL Ở ĐÂY
         response = client.chat.completions.create(
-            model="llama-3.1-70b-versatile",
+            model="llama-3.3-70b-versatile",          # ← Model mới, thay thế cho llama-3.1 đã ngừng hỗ trợ
             messages=messages,
             temperature=0.7,
             max_tokens=2048,
@@ -95,5 +95,13 @@ def ask_ai(text, user_id):
         return reply
 
     except Exception as e:
-        print(f"AI ERROR: {str(e)}")
-        return f"❌ Lỗi khi gọi AI: {str(e)[:120]}\nThử lại sau vài giây nhé!"
+        error_msg = str(e)
+        print(f"AI ERROR: {error_msg}")
+        
+        # Xử lý lỗi model không tồn tại một cách thân thiện hơn
+        if "decommissioned" in error_msg or "no longer supported" in error_msg:
+            return "❌ Model AI hiện tại tạm thời không khả dụng. Đang chuyển sang model mới, thử lại sau vài giây nhé!"
+        elif "400" in error_msg:
+            return f"❌ Lỗi khi gọi AI (mã 400): {error_msg[:150]}\nThử lại sau nhé!"
+        else:
+            return f"❌ Lỗi khi gọi AI: {error_msg[:120]}\nThử lại sau vài giây nhé!"
