@@ -1,5 +1,5 @@
 pyTelegramBotAPI
-openai
+groq                 # ← thay openai bằng cái này
 pdfplumber
 pandas
 openpyxl
@@ -10,3 +10,4 @@ pytesseract
 Pillow
 requests
 PyMuPDF
+# openai             # ← comment nếu không dùng Whisper nữa
