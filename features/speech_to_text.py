@@ -1,21 +1,25 @@
 import os
 import requests
 
-API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 def voice_to_text(path):
+    if not OPENAI_API_KEY:
+        return "❌ Chưa cấu hình OPENAI_API_KEY → không dùng được voice-to-text."
+
     try:
         url = "https://api.openai.com/v1/audio/transcriptions"
-
-        headers = {"Authorization": f"Bearer {API_KEY}"}
+        headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
         files = {
-            "file": open(path, "rb"),
-            "model": (None, "whisper-1")
+            "file": ("audio.ogg", open(path, "rb"), "audio/ogg"),
+            "model": (None, "whisper-1"),
+            "language": (None, "vi")
         }
 
-        res = requests.post(url, headers=headers, files=files)
-        return res.json().get("text", "❌ lỗi voice")
+        res = requests.post(url, headers=headers, files=files, timeout=30)
+        res.raise_for_status()
+        return res.json().get("text", "❌ Không nhận diện được giọng nói.")
 
     except Exception as e:
-        print(e)
-        return "❌ lỗi voice"
+        print(f"WHISPER ERROR: {e}")
+        return f"❌ Lỗi voice-to-text: {str(e)[:80]}"
