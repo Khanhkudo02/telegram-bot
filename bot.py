@@ -1,5 +1,14 @@
 import os
 import telebot
+import time
+import logging
+
+# Cấu hình logging để dễ debug trên Railway
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 from features.weather import get_weather
 from features.search import search_web
@@ -46,17 +55,23 @@ def voice_handler(message):
         file_info = bot.get_file(message.voice.file_id)
         data = bot.download_file(file_info.file_path)
 
-        with open("voice.ogg", "wb") as f:
+        temp_file = "voice_temp.ogg"
+        with open(temp_file, "wb") as f:
             f.write(data)
 
-        text = voice_to_text("voice.ogg")
-        os.remove("voice.ogg")  # dọn dẹp
+        text = voice_to_text(temp_file)
 
-        if "lỗi" in text.lower():
-            bot.send_message(message.chat.id, text)
+        # Dọn file tạm
+        try:
+            os.remove(temp_file)
+        except:
+            pass
+
+        if "lỗi" in text.lower() or not text.strip():
+            bot.send_message(message.chat.id, text or "❌ Không nhận diện được giọng nói.")
             return
 
-        bot.send_message(message.chat.id, f"📝 Đã nhận giọng nói:\n{text}")
+        bot.send_message(message.chat.id, f"📝 Đã nhận giọng nói:\n{text[:500]}...")
 
         reply = ask_ai(text, message.chat.id)
         bot.send_message(message.chat.id, reply, reply_markup=main_menu())
@@ -65,8 +80,8 @@ def voice_handler(message):
             send_voice(reply, message.chat.id, bot)
 
     except Exception as e:
-        print(f"VOICE ERROR: {e}")
-        bot.send_message(message.chat.id, "❌ Lỗi xử lý voice. Thử lại sau.")
+        logger.error(f"VOICE HANDLER ERROR: {e}")
+        bot.send_message(message.chat.id, "❌ Lỗi xử lý voice. Thử gửi lại sau.")
 
 # ===== CHAT / MENU =====
 @bot.message_handler(func=lambda m: True)
@@ -99,7 +114,8 @@ def chat(message):
     # STATE HANDLING
     if user_state.get(chat_id) == "weather":
         user_state.pop(chat_id, None)
-        bot.send_message(chat_id, get_weather(text), reply_markup=main_menu())
+        result = get_weather(text)
+        bot.send_message(chat_id, result, reply_markup=main_menu())
         return
 
     if user_state.get(chat_id) == "search":
@@ -109,11 +125,37 @@ def chat(message):
         return
 
     # DEFAULT → AI CHAT
-    reply = ask_ai(text, chat_id)
-    bot.send_message(chat_id, reply, reply_markup=main_menu())
+    try:
+        reply = ask_ai(text, chat_id)
+        bot.send_message(chat_id, reply, reply_markup=main_menu())
 
-    if len(reply) < 300:
-        send_voice(reply, chat_id, bot)
+        if len(reply) < 300:
+            send_voice(reply, chat_id, bot)
+    except Exception as e:
+        logger.error(f"AI CHAT ERROR: {e}")
+        bot.send_message(chat_id, "❌ Có lỗi xảy ra khi xử lý tin nhắn. Thử lại sau nhé!")
 
-print("✅ Bot đang chạy...")
-bot.infinity_polling()
+# ================== POLLING VỚI XỬ LÝ LỖI 409 ==================
+logger.info("Bắt đầu polling Telegram...")
+
+while True:
+    try:
+        bot.infinity_polling(
+            timeout=20,
+            long_polling_timeout=10,
+            allowed_updates=["message", "callback_query", "channel_post"]
+        )
+    except telebot.apihelper.ApiTelegramException as e:
+        error_str = str(e)
+        if "409" in error_str or "terminated by other" in error_str or "conflict" in error_str.lower():
+            logger.warning("Lỗi 409 (Conflict): Có instance khác đang polling. Chờ 15 giây rồi thử lại...")
+            time.sleep(15)
+        elif "terminated" in error_str:
+            logger.warning("Polling bị terminate, retry sau 10 giây...")
+            time.sleep(10)
+        else:
+            logger.error(f"Lỗi Telegram API: {error_str}")
+            time.sleep(5)
+    except Exception as e:
+        logger.error(f"Lỗi không mong đợi trong polling: {str(e)}")
+        time.sleep(5)
