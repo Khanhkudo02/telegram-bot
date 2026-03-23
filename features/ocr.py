@@ -1,8 +1,8 @@
 import pytesseract
 from PIL import Image
 import sqlite3
+import os
 
-# 👉 FIX ĐƯỜNG DẪN (QUAN TRỌNG)
 pytesseract.pytesseract.tesseract_cmd = "/usr/bin/tesseract"
 
 conn = sqlite3.connect("memory.db", check_same_thread=False)
@@ -10,35 +10,33 @@ cursor = conn.cursor()
 
 def handle_image(bot, message):
     try:
-        # tải ảnh
-        file = bot.get_file(message.photo[-1].file_id)
-        data = bot.download_file(file.file_path)
+        file_info = bot.get_file(message.photo[-1].file_id)
+        data = bot.download_file(file_info.file_path)
 
-        with open("img.jpg", "wb") as f:
+        img_path = "temp_ocr.jpg"
+        with open(img_path, "wb") as f:
             f.write(data)
 
-        # đọc ảnh
-        img = Image.open("img.jpg")
+        img = Image.open(img_path)
+        text = pytesseract.image_to_string(img, lang="eng+vie").strip()
 
-        # 👉 CHỈ DÙNG ENG (Railway không có tiếng Việt)
-        text = pytesseract.image_to_string(img, lang="eng")
-
-        text = text.strip()
+        os.remove(img_path)
 
         if not text:
             bot.reply_to(
                 message,
-                "❌ Không đọc được chữ.\n👉 Gửi ảnh rõ hơn hoặc gửi file (📎)"
+                "❌ Không nhận diện được chữ trong ảnh.\nHãy gửi ảnh rõ nét, chữ đen nền trắng tốt hơn."
             )
             return
 
-        # lưu DB
-        cursor.execute("DELETE FROM files WHERE user_id=?", (message.chat.id,))
-        cursor.execute("INSERT INTO files VALUES(?,?)", (message.chat.id, text[:12000]))
+        # Lưu vào DB
+        cursor.execute("INSERT OR REPLACE INTO files (user_id, content) VALUES (?, ?)",
+                       (message.chat.id, text[:12000]))
         conn.commit()
 
-        bot.reply_to(message, f"📸 OCR OK:\n\n{text[:200]}")
+        preview = text[:300] + "..." if len(text) > 300 else text
+        bot.reply_to(message, f"📸 OCR thành công:\n\n{preview}\n\n💬 Hỏi tôi về nội dung ảnh nhé!")
 
     except Exception as e:
-        print("OCR ERROR:", e)
-        bot.reply_to(message, "❌ OCR lỗi")
+        print(f"OCR ERROR: {e}")
+        bot.reply_to(message, "❌ Lỗi OCR. Thử gửi ảnh khác.")
